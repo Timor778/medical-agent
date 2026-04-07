@@ -6,7 +6,7 @@ import uvicorn
 
 ROOT_DIR = Path(__file__).resolve().parent
 SRC_DIR = ROOT_DIR / "src"
-# 和 main.py 一样，run_api.py 只是另一个启动入口。
+
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 

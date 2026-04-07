@@ -13,9 +13,9 @@
 
 ## 启动方式
 
-```powershell
-pip install -r requirements.txt
-python run_api.py
+```
+1、创建一个.env，配置好LLM_API_KEY，LLM_MODEL_ID，TAVILY_API_KEY
+2、python run_api.py
 ```
 
 启动后访问：

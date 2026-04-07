@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
+from medical_agent.config import get_settings
 from medical_agent.prompts import (
     ANSWER_PROMPT,
     FALLBACK_PROMPT,
@@ -12,14 +13,15 @@ from medical_agent.prompts import (
     UNDERSTAND_PROMPT,
 )
 from medical_agent.schemas import QueryRewriteResult, UnderstandResult
-from medical_agent.services.llm_service import build_llm, extract_text, parse_json_object
-from medical_agent.services.search_service import MedicalSearchService
+from medical_agent.services.llm_service import invoke_text, parse_json_object, stream_text
+from medical_agent.services.retrieval_service import LocalRagTool, RetrievalBundle, WebSearchTool
 
 from .state import DebugTrace, MedicalAgentState
 
 
-llm = build_llm()
-search_service = MedicalSearchService()
+local_rag_tool = LocalRagTool()
+web_search_tool = WebSearchTool()
+settings = get_settings()
 
 
 def _append_debug(
@@ -31,7 +33,6 @@ def _append_debug(
     next_node: str,
     reset: bool = False,
 ) -> list[DebugTrace]:
-    # 每个节点执行完都追加一条调试记录，方便前端重建运行轨迹。
     previous = [] if reset else list(state.get("debug_steps", []))
     previous.append(
         {
@@ -45,18 +46,71 @@ def _append_debug(
     return previous
 
 
+def _extract_user_query(state: MedicalAgentState) -> str:
+    last_message = state["messages"][-1]
+    content = getattr(last_message, "content", "")
+    if isinstance(content, str):
+        return content
+    return str(content)
+
+
+def _format_bundle(bundle: RetrievalBundle) -> str:
+    return f"检索摘要：{bundle.summary}\n\n{bundle.snippets}".strip()
+
+
+def build_answer_messages(state: MedicalAgentState, *, fallback: bool = False) -> list[BaseMessage]:
+    prompt = FALLBACK_PROMPT if fallback else ANSWER_PROMPT
+    source_text = "\n".join(state.get("sources", [])) or "无"
+    return [
+        SystemMessage(content=SYSTEM_ROLE),
+        SystemMessage(content=prompt),
+        HumanMessage(
+            content=(
+                f"用户问题：{state['user_query']}\n"
+                f"意图总结：{state['intent_summary']}\n"
+                f"风险等级：{state['triage_level']}\n"
+                f"检索模式：{state.get('retrieval_mode', '-')}\n"
+                f"搜索词：{state.get('search_query', '-')}\n"
+                f"检索结果：\n{state.get('search_results', '无')}\n\n"
+                f"来源列表：\n{source_text}"
+            )
+        ),
+    ]
+
+
+def stream_final_answer(state: MedicalAgentState, *, fallback: bool = False) -> Iterable[str]:
+    return stream_text(build_answer_messages(state, fallback=fallback))
+
+
+def _finalize_answer_state(state: MedicalAgentState, answer: str, *, fallback: bool = False) -> dict[str, Any]:
+    node = "fallback" if fallback else "answer"
+    summary = "联网不可用，输出保守医疗建议" if fallback else "基于检索结果生成最终医疗回答"
+    route = "fallback" if fallback else "completed"
+    return {
+        "final_answer": answer,
+        "route": route,
+        "debug_steps": _append_debug(
+            state,
+            node=node,
+            summary=summary,
+            edge="to_end",
+            next_node="end",
+        ),
+        "messages": [AIMessage(content=answer)],
+    }
+
+
 def understand_node(state: MedicalAgentState) -> dict[str, Any]:
-    # 第一个核心节点: 把自然语言问题转成结构化理解结果。
-    user_query = extract_text(state["messages"][-1])
-    response = llm.invoke(
+    user_query = _extract_user_query(state)
+    response = invoke_text(
         [
             SystemMessage(content=SYSTEM_ROLE),
             SystemMessage(content=UNDERSTAND_PROMPT),
             HumanMessage(content=user_query),
         ]
     )
-    parsed = UnderstandResult.model_validate(parse_json_object(extract_text(response)))
-    next_node = "clarify" if parsed.needs_clarification else "search"
+    parsed = UnderstandResult.model_validate(parse_json_object(response))
+    next_node = "clarify" if parsed.needs_clarification else "rag"
     return {
         "user_query": user_query,
         "intent_summary": parsed.intent_summary,
@@ -69,7 +123,7 @@ def understand_node(state: MedicalAgentState) -> dict[str, Any]:
         "debug_steps": _append_debug(
             state,
             node="understand",
-            summary=f"识别意图并完成分诊，风险等级为 {parsed.triage_level}",
+            summary=f"识别意图并完成分诊，风险等级 {parsed.triage_level}",
             edge=f"route={next_node}",
             next_node=next_node,
             reset=True,
@@ -78,7 +132,6 @@ def understand_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def clarify_node(state: MedicalAgentState) -> dict[str, Any]:
-    # 如果信息不够，这里直接给用户补问，而不是盲目进入搜索。
     question = state.get("clarification_question") or "请补充更具体的症状、持续时间和适用人群信息。"
     return {
         "final_answer": question,
@@ -94,49 +147,61 @@ def clarify_node(state: MedicalAgentState) -> dict[str, Any]:
     }
 
 
+def rag_node(state: MedicalAgentState) -> dict[str, Any]:
+    bundle = local_rag_tool.retrieve(state["search_query"])
+    next_node = "answer" if bundle.success else "search"
+    summary = (
+        f"本地 RAG 命中 {bundle.hit_count} 条资料，优先使用本地知识回答"
+        if bundle.success
+        else "本地 RAG 未命中足够资料，转入联网检索"
+    )
+    return {
+        "search_results": _format_bundle(bundle),
+        "sources": bundle.sources,
+        "retrieval_mode": bundle.mode,
+        "retrieval_hits": bundle.hit_count,
+        "route": next_node,
+        "debug_steps": _append_debug(
+            state,
+            node="rag",
+            summary=summary,
+            edge=f"route={next_node}",
+            next_node=next_node,
+        ),
+    }
+
+
 def search_node(state: MedicalAgentState) -> dict[str, Any]:
-    # 搜索节点负责查资料，并根据结果决定下一步继续回答、重写还是兜底。
     attempts = state.get("search_attempts", 0) + 1
-    try:
-        bundle = search_service.search(state["search_query"])
+    bundle = web_search_tool.retrieve(state["search_query"])
+
+    if bundle.success:
         next_node = "answer"
-        summary = f"第 {attempts} 次联网搜索完成，命中 {len(bundle.sources)} 个来源"
-        if not bundle.sources and attempts < 2:
-            next_node = "rewrite"
-            summary = f"第 {attempts} 次联网搜索结果不足，准备重写查询词"
-        return {
-            "search_attempts": attempts,
-            "search_results": f"搜索摘要：{bundle.summary}\n\n{bundle.snippets}".strip(),
-            "sources": bundle.sources,
-            "route": next_node,
-            "debug_steps": _append_debug(
-                state,
-                node="search",
-                summary=summary,
-                edge=f"route={next_node}",
-                next_node=next_node,
-            ),
-        }
-    except Exception as exc:
-        next_node = "rewrite" if attempts < 2 else "fallback"
-        return {
-            "search_attempts": attempts,
-            "search_results": f"搜索失败：{exc}",
-            "sources": [],
-            "route": next_node,
-            "debug_steps": _append_debug(
-                state,
-                node="search",
-                summary=f"第 {attempts} 次搜索异常，错误为：{exc}",
-                edge=f"route={next_node}",
-                next_node=next_node,
-            ),
-        }
+        summary = f"第 {attempts} 次联网检索完成，命中 {bundle.hit_count} 个来源"
+    else:
+        max_attempts = settings.max_search_attempts
+        next_node = "rewrite" if attempts < max_attempts else "fallback"
+        summary = f"第 {attempts} 次联网检索结果不足，下一步 {next_node}"
+
+    return {
+        "search_attempts": attempts,
+        "search_results": _format_bundle(bundle),
+        "sources": bundle.sources,
+        "retrieval_mode": bundle.mode,
+        "retrieval_hits": bundle.hit_count,
+        "route": next_node,
+        "debug_steps": _append_debug(
+            state,
+            node="search",
+            summary=summary,
+            edge=f"route={next_node}",
+            next_node=next_node,
+        ),
+    }
 
 
 def rewrite_query_node(state: MedicalAgentState) -> dict[str, Any]:
-    # 第一次搜索不理想时，让模型把搜索词改写得更适合搜索引擎。
-    response = llm.invoke(
+    response = invoke_text(
         [
             SystemMessage(content=SYSTEM_ROLE),
             SystemMessage(content=REWRITE_QUERY_PROMPT),
@@ -145,12 +210,12 @@ def rewrite_query_node(state: MedicalAgentState) -> dict[str, Any]:
                     f"用户问题：{state['user_query']}\n"
                     f"当前意图总结：{state['intent_summary']}\n"
                     f"上一轮搜索词：{state['search_query']}\n"
-                    f"上一轮搜索结果：{state['search_results']}"
+                    f"上一轮检索结果：{state.get('search_results', '无')}"
                 )
             ),
         ]
     )
-    parsed = QueryRewriteResult.model_validate(parse_json_object(extract_text(response)))
+    parsed = QueryRewriteResult.model_validate(parse_json_object(response))
     return {
         "search_query": parsed.search_query,
         "search_rewrite_reason": parsed.reason,
@@ -166,65 +231,10 @@ def rewrite_query_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def answer_node(state: MedicalAgentState) -> dict[str, Any]:
-    # 这里才真正把“问题理解 + 风险等级 + 搜索结果”组装成最终回答。
-    source_text = "\n".join(state.get("sources", [])) or "无"
-    response = llm.invoke(
-        [
-            SystemMessage(content=SYSTEM_ROLE),
-            SystemMessage(content=ANSWER_PROMPT),
-            HumanMessage(
-                content=(
-                    f"用户问题：{state['user_query']}\n"
-                    f"意图总结：{state['intent_summary']}\n"
-                    f"风险等级：{state['triage_level']}\n"
-                    f"搜索词：{state['search_query']}\n"
-                    f"搜索结果：\n{state['search_results']}\n\n"
-                    f"来源列表：\n{source_text}"
-                )
-            ),
-        ]
-    )
-    answer = extract_text(response)
-    return {
-        "final_answer": answer,
-        "route": "completed",
-        "debug_steps": _append_debug(
-            state,
-            node="answer",
-            summary="基于搜索结果生成最终医疗回答",
-            edge="to_end",
-            next_node="end",
-        ),
-        "messages": [AIMessage(content=answer)],
-    }
+    answer = "".join(stream_final_answer(state))
+    return _finalize_answer_state(state, answer, fallback=False)
 
 
 def fallback_answer_node(state: MedicalAgentState) -> dict[str, Any]:
-    # 搜索不可用时给出保守建议，并明确避免伪造来源。
-    response = llm.invoke(
-        [
-            SystemMessage(content=SYSTEM_ROLE),
-            SystemMessage(content=FALLBACK_PROMPT),
-            HumanMessage(
-                content=(
-                    f"用户问题：{state['user_query']}\n"
-                    f"意图总结：{state['intent_summary']}\n"
-                    f"风险等级：{state['triage_level']}\n"
-                    f"搜索情况：{state['search_results']}"
-                )
-            ),
-        ]
-    )
-    answer = extract_text(response)
-    return {
-        "final_answer": answer,
-        "route": "fallback",
-        "debug_steps": _append_debug(
-            state,
-            node="fallback",
-            summary="搜索不可用，回退到保守医疗建议",
-            edge="to_end",
-            next_node="end",
-        ),
-        "messages": [AIMessage(content=answer)],
-    }
+    answer = "".join(stream_final_answer(state, fallback=True))
+    return _finalize_answer_state(state, answer, fallback=True)

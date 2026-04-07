@@ -1,0 +1,278 @@
+:root {
+  --bg: #f4efe6;
+  --panel: #fffaf0;
+  --panel-alt: #fffdf8;
+  --text: #1d2a24;
+  --muted: #5c6b61;
+  --accent: #0f766e;
+  --accent-soft: #daf0eb;
+  --line: #dacfbf;
+  --danger: #b42318;
+  --shadow: 0 20px 60px rgba(90, 72, 41, 0.10);
+  --page-max: 1420px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top right, rgba(15,118,110,0.10), transparent 30%),
+    radial-gradient(circle at left center, rgba(210,154,76,0.12), transparent 24%),
+    var(--bg);
+}
+
+.page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 24px 18px 32px;
+}
+
+.hero, .panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  padding: 28px;
+  margin-bottom: 18px;
+}
+
+h1, h2, h3 { margin: 0 0 12px; }
+h1 { font-size: 34px; }
+
+.subtitle,
+.tip,
+.status,
+.trace-item,
+.source-list {
+  line-height: 1.8;
+}
+
+.subtitle,
+.tip,
+.status {
+  color: var(--muted);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.stack {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.panel {
+  padding: 20px;
+  min-width: 0;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.top-gap {
+  margin-top: 14px;
+}
+
+input, textarea, button {
+  font: inherit;
+}
+
+input, textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-alt);
+  padding: 14px;
+}
+
+textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.submit-btn {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.warning {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.meta-item {
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  min-height: 88px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.meta-item strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.diagram-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.toolbar-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tool-btn {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #efe6d5;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.answer-box {
+  height: 360px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-alt);
+}
+
+.answer-box pre {
+  margin: 0;
+  min-height: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.8;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  padding: 18px;
+}
+
+.diagram-panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel-alt);
+  overflow: hidden;
+  width: 100%;
+}
+
+.mermaid-wrap {
+  width: 100%;
+  overflow: auto;
+  padding: 16px;
+}
+
+.mermaid-wrap.runtime {
+  height: 520px;
+}
+
+.mermaid-wrap.static {
+  min-height: 360px;
+  max-height: 560px;
+}
+
+.mermaid-stage {
+  min-width: 100%;
+  width: max-content;
+  min-height: 280px;
+  transform-origin: top left;
+}
+
+.trace-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.trace-item {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel-alt);
+}
+
+.trace-item strong {
+  display: inline-block;
+  min-width: 96px;
+}
+
+.source-box {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.source-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.inline-code {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #efe6d5;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.92em;
+}
+
+@media (max-width: 1180px) {
+  .layout, .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .answer-box {
+    height: 300px;
+  }
+
+  .mermaid-wrap.runtime,
+  .mermaid-wrap.static {
+    height: 420px;
+    max-height: 420px;
+  }
+}
