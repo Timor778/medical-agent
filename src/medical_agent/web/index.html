@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>医疗问诊 Agent</title>
+  <script type="module">
+    window.mermaidReady = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs")
+      .then((module) => {
+        const mermaid = module.default;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: "default",
+          securityLevel: "loose",
+          flowchart: { useMaxWidth: false, htmlLabels: true }
+        });
+        window.mermaid = mermaid;
+        return mermaid;
+      });
+  </script>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fffaf0;
+      --panel-alt: #fffdf8;
+      --text: #1d2a24;
+      --muted: #5c6b61;
+      --accent: #0f766e;
+      --accent-soft: #daf0eb;
+      --line: #dacfbf;
+      --danger: #b42318;
+      --shadow: 0 20px 60px rgba(90, 72, 41, 0.10);
+      --page-max: 1420px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(15,118,110,0.10), transparent 30%),
+        radial-gradient(circle at left center, rgba(210,154,76,0.12), transparent 24%),
+        var(--bg);
+    }
+
+    .page {
+      max-width: var(--page-max);
+      margin: 0 auto;
+      padding: 24px 18px 32px;
+    }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3 { margin: 0 0 12px; }
+    h1 { font-size: 34px; }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 400px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      padding: 20px;
+      min-width: 0;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    input, textarea, button {
+      font: inherit;
+    }
+
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel-alt);
+      padding: 14px;
+    }
+
+    textarea {
+      min-height: 180px;
+      resize: vertical;
+      line-height: 1.7;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    .submit-btn {
+      width: 100%;
+      margin-top: 14px;
+    }
+
+    .tip {
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .status {
+      margin-bottom: 16px;
+      color: var(--muted);
+    }
+
+    .warning {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .meta-item {
+      padding: 14px;
+      border-radius: 16px;
+      background: var(--accent-soft);
+      min-height: 88px;
+    }
+
+    .meta-item strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .answer-header,
+    .diagram-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .toolbar-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tool-btn {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #efe6d5;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .answer-box {
+      height: 360px;
+      overflow: auto;
+      overflow-x: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel-alt);
+      scroll-behavior: smooth;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .answer-box pre {
+      margin: 0;
+      min-height: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.8;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      padding: 18px;
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+    }
+
+    .diagram-panel {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel-alt);
+      overflow: hidden;
+    }
+
+    .mermaid-wrap {
+      height: 520px;
+      overflow: auto;
+      padding: 16px;
+    }
+
+    .mermaid-stage {
+      min-width: 900px;
+      min-height: 420px;
+      transform-origin: top left;
+    }
+
+    .trace-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+      max-height: 280px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .trace-item {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel-alt);
+      line-height: 1.7;
+    }
+
+    .trace-item strong {
+      display: inline-block;
+      min-width: 96px;
+    }
+
+    .source-box {
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .source-list {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 1180px) {
+      .layout, .split, .meta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .answer-box {
+        height: 300px;
+      }
+
+      .mermaid-wrap {
+        height: 460px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>医疗问诊 Agent</h1>
+      <p class="subtitle">
+        这是一个基于 LangGraph 的 Web 版医疗问诊项目。页面支持提问、查看分诊结果、查看静态图和本次执行路径，并使用固定尺寸的可滚动结果区域。
+      </p>
+    </section>
+
+    <section class="layout">
+      <div class="stack">
+        <section class="panel">
+          <h2>发起问诊</h2>
+          <label for="threadId">会话线程 ID</label>
+          <input id="threadId" value="web-demo" placeholder="例如：demo-001" />
+
+          <label for="question" style="margin-top: 14px;">医疗问题</label>
+          <textarea id="question" placeholder="例如：我咳嗽两天了，低烧 37.8 度，喉咙痛，需要去医院吗？"></textarea>
+
+          <button id="submitBtn" class="submit-btn">开始分析</button>
+          <div class="tip">
+            建议使用不同的 `thread_id` 测试不同会话。这个系统用于医疗信息辅助，不替代医生面诊。
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>项目能力</h2>
+          <div class="tip">
+            1. 医疗意图识别与风险分级<br/>
+            2. 联网搜索真实资料<br/>
+            3. 搜索失败时自动重写查询词<br/>
+            4. 搜索仍失败时回退保守建议<br/>
+            5. 可视化展示节点流向和边的选择
+          </div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="panel">
+          <h2>问诊结果</h2>
+          <div id="status" class="status">等待提交问题。</div>
+          <div id="meta" class="meta-grid"></div>
+          <div class="answer-header">
+            <h3>最终回答</h3>
+            <div class="toolbar-buttons">
+              <button id="scrollTopBtn" class="tool-btn" type="button">回到顶部</button>
+              <button id="scrollBottomBtn" class="tool-btn" type="button">滚动到底部</button>
+            </div>
+          </div>
+          <div id="answerBox" class="answer-box">
+            <pre id="answerText">这里会显示最终回答。</pre>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>本次执行流程</h2>
+          <div class="split">
+            <div>
+              <div class="diagram-toolbar">
+                <h3>运行时流程图</h3>
+                <div class="toolbar-buttons">
+                  <button id="runtimeZoomOut" class="tool-btn" type="button">缩小</button>
+                  <button id="runtimeZoomReset" class="tool-btn" type="button">重置</button>
+                  <button id="runtimeZoomIn" class="tool-btn" type="button">放大</button>
+                </div>
+              </div>
+              <div class="diagram-panel">
+                <div class="mermaid-wrap">
+                  <div id="runtimeMermaid" class="mermaid-stage">flowchart LR
+    start_node([等待执行])</div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div class="diagram-toolbar">
+                <h3>静态 LangGraph 图</h3>
+                <div class="toolbar-buttons">
+                  <button id="staticZoomOut" class="tool-btn" type="button">缩小</button>
+                  <button id="staticZoomReset" class="tool-btn" type="button">重置</button>
+                  <button id="staticZoomIn" class="tool-btn" type="button">放大</button>
+                </div>
+              </div>
+              <div class="diagram-panel">
+                <div class="mermaid-wrap">
+                  <div id="staticMermaid" class="mermaid-stage">flowchart TD
+    start_node([加载中])</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="traceList" class="trace-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>参考来源</h2>
+          <div class="source-box">
+            <ul id="sourceList" class="source-list"></ul>
+          </div>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const submitBtn = document.getElementById("submitBtn");
+    const statusBox = document.getElementById("status");
+    const answerBox = document.getElementById("answerBox");
+    const answerText = document.getElementById("answerText");
+    const metaBox = document.getElementById("meta");
+    const traceList = document.getElementById("traceList");
+    const sourceList = document.getElementById("sourceList");
+    const runtimeMermaid = document.getElementById("runtimeMermaid");
+    const staticMermaid = document.getElementById("staticMermaid");
+
+    const zoomState = { runtime: 1, static: 1 };
+
+    function applyZoom(element, value) {
+      element.style.transform = `scale(${value})`;
+    }
+
+    function bindZoom(prefix, element, key) {
+      document.getElementById(`${prefix}ZoomIn`).addEventListener("click", () => {
+        zoomState[key] = Math.min(zoomState[key] + 0.15, 2.5);
+        applyZoom(element, zoomState[key]);
+      });
+
+      document.getElementById(`${prefix}ZoomOut`).addEventListener("click", () => {
+        zoomState[key] = Math.max(zoomState[key] - 0.15, 0.5);
+        applyZoom(element, zoomState[key]);
+      });
+
+      document.getElementById(`${prefix}ZoomReset`).addEventListener("click", () => {
+        zoomState[key] = 1;
+        applyZoom(element, zoomState[key]);
+      });
+    }
+
+    async function renderMermaid(element, chart) {
+      const mermaid = await window.mermaidReady;
+      const id = "m" + Math.random().toString(36).slice(2);
+      const { svg } = await mermaid.render(id, chart);
+      element.innerHTML = svg;
+      applyZoom(element, element === runtimeMermaid ? zoomState.runtime : zoomState.static);
+    }
+
+    async function loadStaticGraph() {
+      try {
+        const response = await fetch("/api/graph");
+        const chart = await response.text();
+        await renderMermaid(staticMermaid, chart);
+      } catch (error) {
+        staticMermaid.textContent = `静态图加载失败：${error}`;
+      }
+    }
+
+    function renderMeta(data) {
+      metaBox.innerHTML = `
+        <div class="meta-item"><strong>风险等级</strong>${data.triage_level}</div>
+        <div class="meta-item"><strong>意图总结</strong>${data.intent_summary || "-"}</div>
+        <div class="meta-item"><strong>最终路由</strong>${data.route}</div>
+        <div class="meta-item"><strong>搜索词</strong>${data.rewritten_query || "-"}</div>
+        <div class="meta-item"><strong>搜索次数</strong>${data.search_attempts}</div>
+        <div class="meta-item"><strong>来源数量</strong>${data.sources.length}</div>
+      `;
+    }
+
+    function renderTrace(steps) {
+      if (!steps.length) {
+        traceList.innerHTML = "<div class='trace-item'>暂无执行轨迹。</div>";
+        return;
+      }
+
+      traceList.innerHTML = steps.map(step => `
+        <div class="trace-item">
+          <div><strong>步骤</strong>${step.index}</div>
+          <div><strong>当前节点</strong>${step.node}</div>
+          <div><strong>节点动作</strong>${step.summary}</div>
+          <div><strong>选择边</strong>${step.edge}</div>
+          <div><strong>下一个节点</strong>${step.next_node}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderSources(sources) {
+      if (!sources.length) {
+        sourceList.innerHTML = "<li>无可用来源</li>";
+        return;
+      }
+
+      sourceList.innerHTML = sources
+        .map(url => `<li><a href="${url}" target="_blank" rel="noreferrer">${url}</a></li>`)
+        .join("");
+    }
+
+    submitBtn.addEventListener("click", async () => {
+      const question = document.getElementById("question").value.trim();
+      const threadId = document.getElementById("threadId").value.trim() || "web-demo";
+
+      if (!question) {
+        statusBox.innerHTML = "<span class='warning'>请先输入医疗问题。</span>";
+        return;
+      }
+
+      submitBtn.disabled = true;
+      statusBox.textContent = "正在执行医疗问诊图...";
+      answerText.textContent = "处理中...";
+      traceList.innerHTML = "";
+      sourceList.innerHTML = "";
+      answerBox.scrollTop = 0;
+
+      try {
+        const response = await fetch("/api/consult", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, thread_id: threadId })
+        });
+        const data = await response.json();
+
+        statusBox.textContent = "执行完成。";
+        answerText.textContent = data.answer || "无回答";
+        renderMeta(data);
+        renderTrace(data.debug_steps || []);
+        renderSources(data.sources || []);
+        await renderMermaid(runtimeMermaid, data.debug_mermaid);
+      } catch (error) {
+        statusBox.innerHTML = `<span class='warning'>调用失败：${error}</span>`;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    document.getElementById("scrollTopBtn").addEventListener("click", () => {
+      answerBox.scrollTo({ top: 0, behavior: "smooth" });
+    });
+
+    document.getElementById("scrollBottomBtn").addEventListener("click", () => {
+      answerBox.scrollTo({ top: answerBox.scrollHeight, behavior: "smooth" });
+    });
+
+    bindZoom("runtime", runtimeMermaid, "runtime");
+    bindZoom("static", staticMermaid, "static");
+    loadStaticGraph();
+  </script>
+</body>
+</html>
