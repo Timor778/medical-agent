@@ -13,7 +13,7 @@ from medical_agent.prompts import (
     UNDERSTAND_PROMPT,
 )
 from medical_agent.schemas import QueryRewriteResult, UnderstandResult
-from medical_agent.services.llm_service import invoke_text, parse_json_object, stream_text
+from medical_agent.services.llm_service import extract_text, invoke_text, parse_json_object, stream_text
 from medical_agent.services.retrieval_service import LocalRagTool, RetrievalBundle, WebSearchTool
 
 from .state import DebugTrace, MedicalAgentState
@@ -46,12 +46,22 @@ def _append_debug(
     return previous
 
 
-def _extract_user_query(state: MedicalAgentState) -> str:
-    last_message = state["messages"][-1]
-    content = getattr(last_message, "content", "")
-    if isinstance(content, str):
-        return content
-    return str(content)
+def _latest_user_message(state: MedicalAgentState) -> str:
+    return extract_text(state["messages"][-1])
+
+
+def _conversation_context(state: MedicalAgentState, max_turns: int = 6) -> str:
+    transcript: list[str] = []
+    recent_messages = state.get("messages", [])[-max_turns:]
+    for message in recent_messages:
+        if isinstance(message, HumanMessage):
+            role = "用户"
+        elif isinstance(message, AIMessage):
+            role = "助手"
+        else:
+            role = "系统"
+        transcript.append(f"{role}: {extract_text(message)}")
+    return "\n".join(line for line in transcript if line.strip())
 
 
 def _format_bundle(bundle: RetrievalBundle) -> str:
@@ -101,18 +111,24 @@ def _finalize_answer_state(state: MedicalAgentState, answer: str, *, fallback: b
 
 
 def understand_node(state: MedicalAgentState) -> dict[str, Any]:
-    user_query = _extract_user_query(state)
+    conversation_context = _conversation_context(state)
+    latest_user_input = _latest_user_message(state)
     response = invoke_text(
         [
             SystemMessage(content=SYSTEM_ROLE),
             SystemMessage(content=UNDERSTAND_PROMPT),
-            HumanMessage(content=user_query),
+            HumanMessage(
+                content=(
+                    f"最近多轮对话如下：\n{conversation_context}\n\n"
+                    f"当前用户最新输入：{latest_user_input}"
+                )
+            ),
         ]
     )
     parsed = UnderstandResult.model_validate(parse_json_object(response))
     next_node = "clarify" if parsed.needs_clarification else "rag"
     return {
-        "user_query": user_query,
+        "user_query": conversation_context or latest_user_input,
         "intent_summary": parsed.intent_summary,
         "search_query": parsed.search_query,
         "triage_level": parsed.triage_level,

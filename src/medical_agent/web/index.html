@@ -12,7 +12,7 @@
       <h1>医疗问诊 Agent</h1>
       <p class="subtitle">
         这是一个基于 LangGraph 的 Web 医疗问答示例。页面支持提问、查看风险分级、查看真实运行路径、
-        查看静态图结构，并展示最终回答的流式输出。
+        查看静态图结构，并展示最终回答的流式输出与历史会话。
       </p>
     </section>
 
@@ -34,20 +34,22 @@
 
           <button id="submitBtn" class="submit-btn">开始分析</button>
           <div class="tip">
-            系统会优先尝试本地 RAG，再根据需要联网检索。
-            这个系统用于医疗信息辅助，不替代医生面诊。
+            系统会优先尝试本地 RAG，再根据需要联网检索。这个系统用于医疗信息辅助，不替代医生面诊。
           </div>
         </section>
 
         <section class="panel">
-          <h2>项目能力</h2>
-          <div class="tip">
-            1. 医疗意图识别与风险分级<br />
-            2. 本地 RAG 命中与联网检索<br />
-            3. 检索失败时自动重写查询词<br />
-            4. 真实运行流程可视化<br />
-            5. 最终回答 token 流式输出
+          <div class="panel-header">
+            <h2>历史会话</h2>
+            <button id="refreshSessionsBtn" class="tool-btn" type="button">刷新</button>
           </div>
+          <div id="sessionsStatus" class="tip">正在加载历史会话...</div>
+          <div id="sessionsList" class="session-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>当前会话时间线</h2>
+          <div id="sessionTimeline" class="timeline-list"></div>
         </section>
       </div>
 

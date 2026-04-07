@@ -3,9 +3,11 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
 from medical_agent.schemas import ConsultationResponse, DebugStep
+from medical_agent.services.llm_service import current_llm_profile
+from medical_agent.services.session_store import get_session_store
 
 from .nodes import (
     _finalize_answer_state,
@@ -22,7 +24,7 @@ from .routing import route_after_rag, route_after_search, route_after_understand
 from .state import MedicalAgentState
 
 
-THREAD_MEMORY: dict[str, list] = {}
+session_store = get_session_store()
 
 
 def _build_runtime_mermaid(debug_steps: list[dict]) -> str:
@@ -50,15 +52,23 @@ def _build_runtime_mermaid(debug_steps: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _error_event(*, code: str, message: str, stage: str) -> dict:
+    return {
+        "event": "error",
+        "data": {
+            "code": code,
+            "message": message,
+            "stage": stage,
+        },
+    }
+
+
 def _get_history(thread_id: str) -> list:
-    return list(THREAD_MEMORY.get(thread_id, []))
+    return session_store.load_history(thread_id)
 
 
 def _save_history(thread_id: str, question: str, answer: str) -> None:
-    history = _get_history(thread_id)
-    history.append(HumanMessage(content=question))
-    history.append(AIMessage(content=answer))
-    THREAD_MEMORY[thread_id] = history[-12:]
+    session_store.append_exchange(thread_id, question, answer)
 
 
 def _initial_state(question: str, thread_id: str) -> MedicalAgentState:
@@ -93,6 +103,7 @@ def _run_pre_answer(state: MedicalAgentState) -> tuple[MedicalAgentState, str]:
 
 def _build_response(state: MedicalAgentState, question: str, elapsed_ms: int) -> ConsultationResponse:
     debug_steps = [DebugStep.model_validate(step) for step in state.get("debug_steps", [])]
+    llm_profile = current_llm_profile()
     return ConsultationResponse(
         question=question,
         answer=state.get("final_answer", ""),
@@ -106,6 +117,8 @@ def _build_response(state: MedicalAgentState, question: str, elapsed_ms: int) ->
         debug_mermaid=_build_runtime_mermaid([step.model_dump() for step in debug_steps]),
         elapsed_ms=elapsed_ms,
         retrieval_mode=state.get("retrieval_mode", "-"),
+        llm_provider=llm_profile["provider"],
+        llm_model_id=llm_profile["model_id"],
     )
 
 
@@ -128,24 +141,36 @@ def run_consultation(question: str, thread_id: str) -> ConsultationResponse:
 
 def stream_consultation(question: str, thread_id: str) -> Iterable[dict]:
     started_at = time.perf_counter()
-    state = _initial_state(question, thread_id)
-    state, terminal = _run_pre_answer(state)
-    yield {"event": "status", "data": {"message": "正在分析问题并执行问诊流程..."}}
-
-    if terminal == "clarify":
-        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-        _save_history(thread_id, question, state.get("final_answer", ""))
-        yield {"event": "done", "data": _build_response(state, question, elapsed_ms).model_dump()}
-        return
-
-    fallback = terminal == "fallback"
     chunks: list[str] = []
-    for token in stream_final_answer(state, fallback=fallback):
-        chunks.append(token)
-        yield {"event": "answer_chunk", "data": {"chunk": token}}
+    state: MedicalAgentState | None = None
 
-    final_answer = "".join(chunks)
-    state.update(_finalize_answer_state(state, final_answer, fallback=fallback))
-    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-    _save_history(thread_id, question, final_answer)
-    yield {"event": "done", "data": _build_response(state, question, elapsed_ms).model_dump()}
+    try:
+        state = _initial_state(question, thread_id)
+        state, terminal = _run_pre_answer(state)
+        yield {"event": "status", "data": {"message": "正在分析问题并执行问诊流程..."}}
+
+        if terminal == "clarify":
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            _save_history(thread_id, question, state.get("final_answer", ""))
+            yield {"event": "done", "data": _build_response(state, question, elapsed_ms).model_dump()}
+            return
+
+        fallback = terminal == "fallback"
+        for token in stream_final_answer(state, fallback=fallback):
+            chunks.append(token)
+            yield {"event": "answer_chunk", "data": {"chunk": token}}
+
+        final_answer = "".join(chunks)
+        state.update(_finalize_answer_state(state, final_answer, fallback=fallback))
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        _save_history(thread_id, question, final_answer)
+        yield {"event": "done", "data": _build_response(state, question, elapsed_ms).model_dump()}
+    except Exception as exc:
+        stage = "stream_answer" if chunks else "graph_execution"
+        if state is not None and chunks:
+            state["final_answer"] = "".join(chunks)
+        yield _error_event(
+            code="STREAM_FAILED",
+            message=f"问诊过程中出现异常：{exc}",
+            stage=stage,
+        )

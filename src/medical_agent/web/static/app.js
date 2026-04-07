@@ -11,6 +11,7 @@ const mermaidReady = import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermai
   });
 
 const submitBtn = document.getElementById("submitBtn");
+const refreshSessionsBtn = document.getElementById("refreshSessionsBtn");
 const statusBox = document.getElementById("status");
 const answerBox = document.getElementById("answerBox");
 const answerText = document.getElementById("answerText");
@@ -21,16 +22,36 @@ const runtimeMermaid = document.getElementById("runtimeMermaid");
 const staticMermaid = document.getElementById("staticMermaid");
 const threadInput = document.getElementById("threadId");
 const questionInput = document.getElementById("question");
+const sessionsStatus = document.getElementById("sessionsStatus");
+const sessionsList = document.getElementById("sessionsList");
+const sessionTimeline = document.getElementById("sessionTimeline");
 
 const zoomState = { runtime: 1, static: 1 };
 let timerHandle = null;
 let requestStartedAt = 0;
 let currentMetaState = {};
+let activeThreadId = threadInput.value.trim() || "web-demo";
 
 function formatElapsed(ms) {
   if (!Number.isFinite(ms) || ms < 0) return "-";
   if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(2)} 秒`;
+}
+
+function formatDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function normalizeMeta(data = {}) {
@@ -43,6 +64,8 @@ function normalizeMeta(data = {}) {
     source_count: Array.isArray(data.sources) ? data.sources.length : 0,
     elapsed_ms: Number.isFinite(data.elapsed_ms) ? data.elapsed_ms : null,
     retrieval_mode: data.retrieval_mode || "-",
+    llm_provider: data.llm_provider || "-",
+    llm_model_id: data.llm_model_id || "-",
   };
 }
 
@@ -50,15 +73,17 @@ function renderMeta(data = {}) {
   currentMetaState = { ...currentMetaState, ...data };
   const meta = normalizeMeta(currentMetaState);
   metaBox.innerHTML = `
-    <div class="meta-item"><strong>风险等级</strong>${meta.triage_level}</div>
-    <div class="meta-item"><strong>意图总结</strong>${meta.intent_summary}</div>
-    <div class="meta-item"><strong>最终路径</strong>${meta.route}</div>
-    <div class="meta-item"><strong>检索模式</strong>${meta.retrieval_mode}</div>
-    <div class="meta-item"><strong>搜索词</strong>${meta.rewritten_query}</div>
-    <div class="meta-item"><strong>搜索次数</strong>${meta.search_attempts}</div>
-    <div class="meta-item"><strong>来源数量</strong>${meta.source_count}</div>
-    <div class="meta-item"><strong>推理耗时</strong>${formatElapsed(meta.elapsed_ms)}</div>
-    <div class="meta-item"><strong>会话线程</strong>${threadInput.value.trim() || "web-demo"}</div>
+    <div class="meta-item"><strong>风险等级</strong>${escapeHtml(meta.triage_level)}</div>
+    <div class="meta-item"><strong>意图总结</strong>${escapeHtml(meta.intent_summary)}</div>
+    <div class="meta-item"><strong>最终路径</strong>${escapeHtml(meta.route)}</div>
+    <div class="meta-item"><strong>检索模式</strong>${escapeHtml(meta.retrieval_mode)}</div>
+    <div class="meta-item"><strong>模型提供方</strong>${escapeHtml(meta.llm_provider)}</div>
+    <div class="meta-item"><strong>搜索词</strong>${escapeHtml(meta.rewritten_query)}</div>
+    <div class="meta-item"><strong>当前模型</strong>${escapeHtml(meta.llm_model_id)}</div>
+    <div class="meta-item"><strong>搜索次数</strong>${escapeHtml(meta.search_attempts)}</div>
+    <div class="meta-item"><strong>来源数量</strong>${escapeHtml(meta.source_count)}</div>
+    <div class="meta-item"><strong>推理耗时</strong>${escapeHtml(formatElapsed(meta.elapsed_ms))}</div>
+    <div class="meta-item"><strong>会话线程</strong>${escapeHtml(threadInput.value.trim() || "web-demo")}</div>
   `;
 }
 
@@ -70,11 +95,11 @@ function renderTrace(steps = []) {
 
   traceList.innerHTML = steps.map((step) => `
     <div class="trace-item">
-      <div><strong>步骤</strong>${step.index}</div>
-      <div><strong>当前节点</strong>${step.node}</div>
-      <div><strong>节点动作</strong>${step.summary}</div>
-      <div><strong>选择边</strong>${step.edge}</div>
-      <div><strong>下一节点</strong>${step.next_node}</div>
+      <div><strong>步骤</strong>${escapeHtml(step.index)}</div>
+      <div><strong>当前节点</strong>${escapeHtml(step.node)}</div>
+      <div><strong>节点动作</strong>${escapeHtml(step.summary)}</div>
+      <div><strong>选择边</strong>${escapeHtml(step.edge)}</div>
+      <div><strong>下一节点</strong>${escapeHtml(step.next_node)}</div>
     </div>
   `).join("");
 }
@@ -86,8 +111,49 @@ function renderSources(sources = []) {
   }
 
   sourceList.innerHTML = sources
-    .map((url) => `<li><a href="${url}" target="_blank" rel="noreferrer">${url}</a></li>`)
+    .map((url) => `<li><a href="${url}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a></li>`)
     .join("");
+}
+
+function renderSessionTimeline(messages = []) {
+  if (!messages.length) {
+    sessionTimeline.innerHTML = "<div class='timeline-item'>暂无历史消息。</div>";
+    return;
+  }
+
+  sessionTimeline.innerHTML = messages.map((message) => `
+    <div class="timeline-item">
+      <div class="timeline-role">${message.role === "human" ? "用户" : "助手"}</div>
+      <div>${escapeHtml(message.content)}</div>
+      <div class="timeline-time">${escapeHtml(formatDate(message.created_at))}</div>
+    </div>
+  `).join("");
+}
+
+function renderSessionList(threads = []) {
+  if (!threads.length) {
+    sessionsList.innerHTML = "<div class='session-item'>暂无历史会话。</div>";
+    return;
+  }
+
+  sessionsList.innerHTML = threads.map((thread) => `
+    <div class="session-item ${thread.thread_id === activeThreadId ? "active" : ""}" data-thread-id="${escapeHtml(thread.thread_id)}">
+      <div class="session-item-title">${escapeHtml(thread.thread_id)}</div>
+      <div class="session-item-meta">最近更新：${escapeHtml(formatDate(thread.updated_at))}</div>
+      <div class="session-item-meta">消息数：${escapeHtml(thread.message_count ?? 0)}</div>
+    </div>
+  `).join("");
+
+  for (const item of sessionsList.querySelectorAll(".session-item[data-thread-id]")) {
+    item.addEventListener("click", async () => {
+      const threadId = item.getAttribute("data-thread-id");
+      if (!threadId) return;
+      activeThreadId = threadId;
+      threadInput.value = threadId;
+      renderSessionList(threads);
+      await loadSessionHistory(threadId);
+    });
+  }
 }
 
 function applyZoom(element, value) {
@@ -126,6 +192,40 @@ async function loadStaticGraph() {
     await renderMermaid(staticMermaid, chart);
   } catch (error) {
     staticMermaid.textContent = `静态图加载失败：${error}`;
+  }
+}
+
+async function loadSessions() {
+  sessionsStatus.textContent = "正在加载历史会话...";
+  try {
+    const response = await fetch("/api/sessions");
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const threads = await response.json();
+    sessionsStatus.textContent = threads.length ? "点击任意会话可查看历史消息。" : "暂无历史会话。";
+    renderSessionList(threads);
+    if (activeThreadId) {
+      await loadSessionHistory(activeThreadId);
+    }
+  } catch (error) {
+    sessionsStatus.innerHTML = `<span class="warning">历史会话加载失败：${escapeHtml(error)}</span>`;
+    renderSessionList([]);
+    renderSessionTimeline([]);
+  }
+}
+
+async function loadSessionHistory(threadId) {
+  sessionTimeline.innerHTML = "<div class='timeline-item'>正在加载会话消息...</div>";
+  try {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(threadId)}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    renderSessionTimeline(payload.messages || []);
+  } catch (error) {
+    sessionTimeline.innerHTML = `<div class='timeline-item warning'>历史消息加载失败：${escapeHtml(error)}</div>`;
   }
 }
 
@@ -208,6 +308,7 @@ submitBtn.addEventListener("click", async () => {
     return;
   }
 
+  activeThreadId = threadId;
   submitBtn.disabled = true;
   resetResultArea();
   startElapsedTimer();
@@ -233,6 +334,10 @@ submitBtn.addEventListener("click", async () => {
         answerText.textContent += payload.chunk || "";
         answerBox.scrollTop = answerBox.scrollHeight;
       },
+      error: (payload) => {
+        stopElapsedTimer();
+        statusBox.innerHTML = `<span class="warning">${escapeHtml(payload.message || "问诊过程出现异常。")}</span>`;
+      },
       done: async (payload) => {
         finalPayload = payload;
         answerText.textContent = payload.answer || answerText.textContent || "暂无回答";
@@ -245,17 +350,27 @@ submitBtn.addEventListener("click", async () => {
       },
     });
 
-    if (!finalPayload) {
-      throw new Error("未收到最终结果");
+    if (finalPayload) {
+      stopElapsedTimer(finalPayload.elapsed_ms);
+      await loadSessions();
+      await loadSessionHistory(threadId);
+      return;
     }
-
-    stopElapsedTimer(finalPayload.elapsed_ms);
   } catch (error) {
     stopElapsedTimer();
-    statusBox.innerHTML = `<span class="warning">调用失败：${error}</span>`;
+    statusBox.innerHTML = `<span class="warning">调用失败：${escapeHtml(error)}</span>`;
   } finally {
     submitBtn.disabled = false;
   }
+});
+
+refreshSessionsBtn.addEventListener("click", () => {
+  loadSessions();
+});
+
+threadInput.addEventListener("change", async () => {
+  activeThreadId = threadInput.value.trim() || "web-demo";
+  await loadSessionHistory(activeThreadId);
 });
 
 bindZoom("runtime", runtimeMermaid, "runtime");
@@ -263,4 +378,6 @@ bindZoom("static", staticMermaid, "static");
 renderMeta();
 renderTrace([]);
 renderSources([]);
+renderSessionTimeline([]);
 loadStaticGraph();
+loadSessions();

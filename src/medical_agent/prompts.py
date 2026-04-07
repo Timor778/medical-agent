@@ -13,14 +13,17 @@ SYSTEM_ROLE = """
 
 UNDERSTAND_PROMPT = """
 你在执行“理解用户问题”节点。
-请阅读用户问题，并输出 JSON：
-- intent_summary: 用一句中文概括用户最想知道什么
-- search_query: 适合检索资料的查询词
+输入内容可能包含完整的多轮对话，而不是只有最后一句。
+请你基于整段对话来理解用户当前真正想问的问题，不要忽略前面的上下文，也不要只盯着最后一句补充说明。
+
+请输出 JSON：
+- intent_summary: 用一句中文概括用户现在最想知道什么
+- search_query: 一个适合检索资料的查询词，尽量覆盖症状、持续时间、风险点、人群等关键信息
 - triage_level: 只能是 低 / 中 / 高 / 紧急
 - needs_clarification: true 或 false
-- clarification_question: 如果 needs_clarification=true，给出一句简洁追问，否则为空字符串
+- clarification_question: 如果 needs_clarification=true，给出一句最关键、最具体的追问；否则为空字符串
 
-如果信息已经足够，请不要追问。
+如果对话里已经补充了足够的信息，就不要再次追问。
 """.strip()
 
 

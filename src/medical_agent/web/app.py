@@ -9,7 +9,14 @@ from fastapi.staticfiles import StaticFiles
 
 from medical_agent.graph.builder import create_medical_agent
 from medical_agent.graph.runner import run_consultation, stream_consultation
-from medical_agent.schemas import ConsultationRequest, ConsultationResponse
+from medical_agent.schemas import (
+    ConsultationRequest,
+    ConsultationResponse,
+    SessionHistoryResponse,
+    SessionMessageResponse,
+    SessionThreadResponse,
+)
+from medical_agent.services.session_store import get_session_store
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,6 +25,7 @@ INDEX_FILE = BASE_DIR / "index.html"
 
 app = FastAPI(title="Medical Consultation Agent", version="1.0.0")
 graph_app = create_medical_agent()
+session_store = get_session_store()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -37,7 +45,6 @@ def health() -> dict[str, str]:
 
 @app.get("/favicon.ico")
 def favicon() -> Response:
-    # 浏览器会默认请求 /favicon.ico。这里返回 204，避免启动后日志里一直出现 404。
     return Response(status_code=204)
 
 
@@ -61,4 +68,34 @@ def consult_stream(request: ConsultationRequest) -> StreamingResponse:
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/sessions", response_model=list[SessionThreadResponse])
+def list_sessions(limit: int = 50) -> list[SessionThreadResponse]:
+    records = session_store.list_threads(limit=limit)
+    return [
+        SessionThreadResponse(
+            thread_id=record.thread_id,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+            message_count=record.message_count,
+        )
+        for record in records
+    ]
+
+
+@app.get("/api/sessions/{thread_id}", response_model=SessionHistoryResponse)
+def get_session_history(thread_id: str, limit: int = 100) -> SessionHistoryResponse:
+    records = session_store.get_thread_messages(thread_id, limit=limit)
+    return SessionHistoryResponse(
+        thread_id=thread_id,
+        messages=[
+            SessionMessageResponse(
+                role=record.role,
+                content=record.content,
+                created_at=record.created_at,
+            )
+            for record in records
+        ],
     )

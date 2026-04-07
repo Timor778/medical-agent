@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+import httpx
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 
@@ -12,13 +13,23 @@ from medical_agent.config import get_settings
 
 def build_llm(*, streaming: bool = False) -> ChatOpenAI:
     settings = get_settings()
+    profile = settings.llm
     return ChatOpenAI(
-        model=settings.llm_model_id,
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
+        model=profile.model_id,
+        api_key=profile.api_key,
+        base_url=profile.base_url,
         temperature=settings.temperature,
         streaming=streaming,
     )
+
+
+def current_llm_profile() -> dict[str, str]:
+    profile = get_settings().llm
+    return {
+        "provider": profile.provider,
+        "model_id": profile.model_id,
+        "base_url": profile.base_url,
+    }
 
 
 def extract_text(message: BaseMessage | AIMessage | Any) -> str:
@@ -55,7 +66,14 @@ def invoke_text(messages: Sequence[BaseMessage]) -> str:
 
 
 def stream_text(messages: Sequence[BaseMessage]) -> Iterable[str]:
-    for chunk in build_llm(streaming=True).stream(list(messages)):
-        text = extract_text(chunk)
-        if text:
-            yield text
+    try:
+        for chunk in build_llm(streaming=True).stream(list(messages)):
+            text = extract_text(chunk)
+            if text:
+                yield text
+    except (httpx.HTTPError, OSError) as exc:
+        # 某些 OpenAI-compatible 提供方在流式输出时会中途断开连接。
+        # 这里自动回退到非流式调用，避免整次问答直接失败。
+        fallback_text = invoke_text(messages)
+        if fallback_text:
+            yield fallback_text

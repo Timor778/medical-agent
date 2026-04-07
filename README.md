@@ -14,7 +14,10 @@
 ## 启动方式
 
 ```
-1、创建一个.env，配置好LLM_API_KEY，LLM_MODEL_ID，TAVILY_API_KEY
+1、创建一个.env，配置好以下参数
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+OPENAI_MODEL_NAME=
 2、python run_api.py
 ```
 

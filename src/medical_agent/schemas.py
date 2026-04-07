@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -34,6 +35,8 @@ class ConsultationResponse(BaseModel):
     debug_mermaid: str
     elapsed_ms: int
     retrieval_mode: str
+    llm_provider: str = ""
+    llm_model_id: str = ""
 
 
 class UnderstandResult(BaseModel):
@@ -47,3 +50,21 @@ class UnderstandResult(BaseModel):
 class QueryRewriteResult(BaseModel):
     search_query: str
     reason: str
+
+
+class SessionMessageResponse(BaseModel):
+    role: str
+    content: str
+    created_at: datetime | None = None
+
+
+class SessionThreadResponse(BaseModel):
+    thread_id: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    message_count: int = 0
+
+
+class SessionHistoryResponse(BaseModel):
+    thread_id: str
+    messages: list[SessionMessageResponse]
