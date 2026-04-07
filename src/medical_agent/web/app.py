@@ -13,10 +13,12 @@ from medical_agent.schemas import ConsultationRequest, ConsultationResponse, Deb
 BASE_DIR = Path(__file__).resolve().parent
 INDEX_FILE = BASE_DIR / "index.html"
 app = FastAPI(title="Medical Consultation Agent", version="1.0.0")
+# 服务启动时就把图编译好，后续请求直接复用同一个 graph_app。
 graph_app = create_medical_agent()
 
 
 def _build_runtime_mermaid(debug_steps: list[dict]) -> str:
+    # 把本次真实执行过的节点轨迹拼成 Mermaid 文本，给前端调试展示用。
     lines = ["flowchart LR", "    start_node([开始])"]
     previous = "start_node"
     for step in debug_steps:
@@ -48,10 +50,13 @@ def graph_mermaid() -> str:
 
 @app.post("/api/consult", response_model=ConsultationResponse)
 def consult(request: ConsultationRequest) -> ConsultationResponse:
+    # graph_app.invoke 会按照 builder.py 里定义的图完整跑一遍。
+    # thread_id 会交给 checkpointer，用来区分不同会话线程。
     result = graph_app.invoke(
         {"messages": [HumanMessage(content=request.question)]},
         config={"configurable": {"thread_id": request.thread_id}},
     )
+    # LangGraph 返回的是状态字典，这里再整理成稳定的 API 响应模型。
     debug_steps = [DebugStep.model_validate(step) for step in result.get("debug_steps", [])]
     return ConsultationResponse(
         question=request.question,

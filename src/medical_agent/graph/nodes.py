@@ -31,6 +31,7 @@ def _append_debug(
     next_node: str,
     reset: bool = False,
 ) -> list[DebugTrace]:
+    # 每个节点执行完都追加一条调试记录，方便前端重建运行轨迹。
     previous = [] if reset else list(state.get("debug_steps", []))
     previous.append(
         {
@@ -45,6 +46,7 @@ def _append_debug(
 
 
 def understand_node(state: MedicalAgentState) -> dict[str, Any]:
+    # 第一个核心节点: 把自然语言问题转成结构化理解结果。
     user_query = extract_text(state["messages"][-1])
     response = llm.invoke(
         [
@@ -76,6 +78,7 @@ def understand_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def clarify_node(state: MedicalAgentState) -> dict[str, Any]:
+    # 如果信息不够，这里直接给用户补问，而不是盲目进入搜索。
     question = state.get("clarification_question") or "请补充更具体的症状、持续时间和适用人群信息。"
     return {
         "final_answer": question,
@@ -92,6 +95,7 @@ def clarify_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def search_node(state: MedicalAgentState) -> dict[str, Any]:
+    # 搜索节点负责查资料，并根据结果决定下一步继续回答、重写还是兜底。
     attempts = state.get("search_attempts", 0) + 1
     try:
         bundle = search_service.search(state["search_query"])
@@ -131,6 +135,7 @@ def search_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def rewrite_query_node(state: MedicalAgentState) -> dict[str, Any]:
+    # 第一次搜索不理想时，让模型把搜索词改写得更适合搜索引擎。
     response = llm.invoke(
         [
             SystemMessage(content=SYSTEM_ROLE),
@@ -161,6 +166,7 @@ def rewrite_query_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def answer_node(state: MedicalAgentState) -> dict[str, Any]:
+    # 这里才真正把“问题理解 + 风险等级 + 搜索结果”组装成最终回答。
     source_text = "\n".join(state.get("sources", [])) or "无"
     response = llm.invoke(
         [
@@ -194,6 +200,7 @@ def answer_node(state: MedicalAgentState) -> dict[str, Any]:
 
 
 def fallback_answer_node(state: MedicalAgentState) -> dict[str, Any]:
+    # 搜索不可用时给出保守建议，并明确避免伪造来源。
     response = llm.invoke(
         [
             SystemMessage(content=SYSTEM_ROLE),

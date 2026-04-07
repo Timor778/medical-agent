@@ -11,6 +11,7 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class Settings:
+    # 项目运行所需配置统一放在这里，避免散落在各个模块。
     llm_api_key: str
     llm_base_url: str
     llm_model_id: str
@@ -23,6 +24,7 @@ class Settings:
 
 
 def _get_env(*names: str, default: str = "") -> str:
+    # 允许同一配置兼容多个环境变量名，减少迁移成本。
     for name in names:
         value = os.getenv(name, "").strip().strip('"').strip("'")
         if value:
@@ -31,6 +33,7 @@ def _get_env(*names: str, default: str = "") -> str:
 
 
 def get_settings() -> Settings:
+    # 启动时提前校验关键配置，避免运行到一半才发现缺密钥。
     llm_api_key = _get_env("LLM_API_KEY", "OPENAI_API_KEY")
     tavily_api_key = _get_env("TAVILY_API_KEY")
     if not llm_api_key:

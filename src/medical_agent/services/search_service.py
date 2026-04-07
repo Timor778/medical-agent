@@ -9,6 +9,7 @@ from medical_agent.config import get_settings
 
 @dataclass
 class SearchBundle:
+    # 统一封装搜索输出，屏蔽 Tavily 原始响应格式。
     summary: str
     snippets: str
     sources: list[str]
@@ -21,6 +22,8 @@ class MedicalSearchService:
         self.max_results = settings.search_max_results
 
     def search(self, query: str) -> SearchBundle:
+        # include_answer=True 会返回一个总览摘要，
+        # results 则保留逐条来源，后续可同时给模型和前端使用。
         response = self.client.search(
             query=query,
             search_depth="advanced",

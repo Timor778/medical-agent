@@ -10,6 +10,7 @@ from medical_agent.config import get_settings
 
 
 def build_llm() -> ChatOpenAI:
+    # 统一在这里创建模型客户端，方便后续切换模型或 base_url。
     settings = get_settings()
     return ChatOpenAI(
         model=settings.llm_model_id,
@@ -20,6 +21,8 @@ def build_llm() -> ChatOpenAI:
 
 
 def extract_text(message: BaseMessage | AIMessage) -> str:
+    # LangChain message.content 可能是字符串，也可能是结构化多段内容。
+    # 这里统一抽成普通文本，减少上层节点的分支判断。
     content = message.content
     if isinstance(content, str):
         return content
@@ -33,6 +36,8 @@ def extract_text(message: BaseMessage | AIMessage) -> str:
 
 
 def parse_json_object(raw_text: str) -> dict[str, Any]:
+    # 模型理想情况下会直接返回 JSON，
+    # 但有时会在前后夹带解释文本，所以这里做一次容错提取。
     raw_text = raw_text.strip()
     try:
         return json.loads(raw_text)

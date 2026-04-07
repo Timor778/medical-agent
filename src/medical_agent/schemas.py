@@ -9,6 +9,7 @@ TriageLevel = Literal["低", "中", "高", "紧急"]
 
 
 class DebugStep(BaseModel):
+    # 返回给前端的单步调试信息。
     index: int
     node: str
     summary: str
@@ -17,11 +18,13 @@ class DebugStep(BaseModel):
 
 
 class ConsultationRequest(BaseModel):
+    # /api/consult 的输入结构。
     question: str = Field(..., min_length=1, description="用户输入的医疗问题")
     thread_id: str = Field(default="default-thread", description="会话线程 ID")
 
 
 class ConsultationResponse(BaseModel):
+    # /api/consult 的输出结构。
     question: str
     answer: str
     triage_level: TriageLevel
@@ -35,6 +38,7 @@ class ConsultationResponse(BaseModel):
 
 
 class UnderstandResult(BaseModel):
+    # understand 节点要求大模型输出的 JSON 结构。
     intent_summary: str
     search_query: str
     triage_level: TriageLevel
@@ -43,5 +47,6 @@ class UnderstandResult(BaseModel):
 
 
 class QueryRewriteResult(BaseModel):
+    # rewrite 节点要求大模型输出的 JSON 结构。
     search_query: str
     reason: str
